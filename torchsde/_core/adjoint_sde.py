@@ -344,7 +344,7 @@ class AdjointSDE(base_sde.BaseSDE):
                 create_graph=requires_grad
             )
             dgdy, = misc.vjp(
-                outputs=g.sum(),
+                outputs=misc.real_sum_for_vjp(g),
                 inputs=y,
                 allow_unused=True,
                 retain_graph=True,
@@ -366,12 +366,12 @@ class AdjointSDE(base_sde.BaseSDE):
                 create_graph=True
             )
             mixed_partials_adj_y_and_params = misc.vjp(
-                outputs=avg_dg_vjp.sum(),
+                outputs=misc.real_sum_for_vjp(avg_dg_vjp),
                 inputs=[y] + self.params,
                 allow_unused=True,
                 retain_graph=True,
                 create_graph=requires_grad
             )
             vjp_y_and_params = misc.seq_sub(prod_partials_adj_y_and_params, mixed_partials_adj_y_and_params)
-            return self._g_prod(g_prod, y, adj_y, requires_grad), misc.flatten((vg_dg_vjp, 
+            return self._g_prod(g_prod, y, adj_y, requires_grad), misc.flatten((vg_dg_vjp,
                                                                                 *vjp_y_and_params)).unsqueeze(0)

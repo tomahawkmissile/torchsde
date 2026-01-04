@@ -72,6 +72,27 @@ class ExDiagonal(BaseSDE):
         return self._nfe
 
 
+class ExDiagonalComplex(BaseSDE):
+    noise_type = NOISE_TYPES.diagonal
+
+    def __init__(self, d, sde_type=SDE_TYPES.ito, **kwargs):
+        super(ExDiagonalComplex, self).__init__(sde_type=sde_type, noise_type=ExDiagonalComplex.noise_type)
+        self._nfe = 0
+
+        w = torch.randn(d, dtype=torch.cdouble)
+        self.w = nn.Parameter(w, requires_grad=True)
+
+        self.f = self.f_ito
+
+    def f_ito(self, t, y):
+        self._nfe += 1
+        return self.w * y
+
+    def g(self, t, y):
+        self._nfe += 1
+        return self.w * y
+
+
 class ExScalar(BaseSDE):
     noise_type = NOISE_TYPES.scalar
 

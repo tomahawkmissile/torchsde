@@ -106,3 +106,9 @@ def flat_to_shape(flat_tensor, shapes):
     """
     numels = [shape.numel() for shape in shapes]
     return [flat.reshape(shape) for flat, shape in zip(flat_tensor.split(split_size=numels), shapes)]
+
+
+def real_sum_for_vjp(tensor: torch.Tensor) -> torch.Tensor:
+    if tensor.is_complex():
+        return torch.view_as_real(tensor).sum()
+    return tensor.sum()

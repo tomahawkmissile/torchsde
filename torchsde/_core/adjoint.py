@@ -45,6 +45,10 @@ class _SdeintAdjointMethod(torch.autograd.Function):
         extra_solver_state = extras_and_adjoint_params[:len_extras]
         adjoint_params = extras_and_adjoint_params[len_extras:]
 
+        ctx.y0_dtype = y0.dtype
+        ctx.adjoint_params_dtypes = tuple(param.dtype for param in adjoint_params)
+        ctx.extra_solver_state_dtypes = tuple(x.dtype for x in extra_solver_state)
+
         # This .detach() is VERY IMPORTANT. See adjoint_sde.py::AdjointSDE.get_state.
         y0 = y0.detach()
         # Necessary for the same reason
@@ -118,10 +122,38 @@ class _SdeintAdjointMethod(torch.autograd.Function):
                 aug_state = misc.flatten(aug_state)
                 aug_state = aug_state.unsqueeze(0)  # dummy batch dimension
 
+        def _cast_grad(grad, dtype):
+            if grad is None:
+                return None
+            if grad.dtype == dtype:
+                return grad
+            target_is_complex = dtype.is_complex
+            grad_is_complex = grad.is_complex()
+            if target_is_complex and not grad_is_complex:
+                return grad.to(dtype)
+            if (not target_is_complex) and grad_is_complex:
+                if grad.numel() > 0:
+                    imag_max = float(grad.imag.detach().abs().max().cpu().item())
+                    if imag_max > 1e-6:
+                        raise RuntimeError(
+                            f"Complex grad for real dtype {dtype}; max|imag|={imag_max}. "
+                            "This indicates a bug in complex-adjoint handling."
+                        )
+                grad = grad.real
+                return grad.to(dtype)
+            return grad.to(dtype)
+
         if ctx.saved_extras_for_backward:
-            out = aug_state[1:]
+            out = list(aug_state[1:])
+            out[0] = _cast_grad(out[0], ctx.y0_dtype)
+            for j in range(ctx.len_extras):
+                out[1 + j] = _cast_grad(out[1 + j], ctx.extra_solver_state_dtypes[j])
+            for j in range(len(ctx.adjoint_params_dtypes)):
+                out[1 + ctx.len_extras + j] = _cast_grad(out[1 + ctx.len_extras + j], ctx.adjoint_params_dtypes[j])
         else:
-            out = [aug_state[1]] + ([None] * ctx.len_extras) + aug_state[2:]
+            out = [_cast_grad(aug_state[1], ctx.y0_dtype)] + ([None] * ctx.len_extras) + list(aug_state[2:])
+            for j in range(len(ctx.adjoint_params_dtypes)):
+                out[1 + ctx.len_extras + j] = _cast_grad(out[1 + ctx.len_extras + j], ctx.adjoint_params_dtypes[j])
         return (
             None, None, None, None, None, None, None, None, None, None, None, None, None, *out,
         )

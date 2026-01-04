@@ -179,3 +179,26 @@ def test_basic(problem, method, adaptive):
 
 def _count_differentiable_params(module):
     return len([p for p in module.parameters() if p.requires_grad])
+
+
+def test_complex_diagonal_ito_adjoint_euler():
+    d = 3
+    m = d
+    batch_size = 4
+    ts = torch.tensor([0.0, 0.5], device=device, dtype=torch.float64)
+    dt = 1e-2
+    y0 = torch.full((batch_size, d), 0.1, device=device, dtype=torch.cdouble, requires_grad=True)
+    sde = problems.ExDiagonalComplex(d=d, sde_type=SDE_TYPES.ito).to(device)
+
+    bm = torchsde.BrownianInterval(t0=ts[0], t1=ts[-1], size=(batch_size, m), dtype=torch.float64, device=device)
+
+    ys = torchsde.sdeint_adjoint(sde, y0, ts, dt=dt, bm=bm, method=METHODS.euler, adjoint_method=METHODS.euler)
+    loss = (ys[-1].abs() ** 2).sum(dim=1).mean(dim=0)
+    loss.backward()
+
+    assert y0.grad is not None
+    assert y0.grad.dtype == y0.dtype
+    assert torch.view_as_real(y0.grad).isfinite().all()
+    assert sde.w.grad is not None
+    assert sde.w.grad.dtype == sde.w.dtype
+    assert torch.view_as_real(sde.w.grad).isfinite().all()
